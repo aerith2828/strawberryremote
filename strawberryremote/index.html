@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0f">
+<title>Strawberry remote</title>
+<style>
+:root{--bg:#0b0b0f;--fg:#ececf1;--mut:#8b8b98;--card:#16161d;--acc:#e5486b}
+@media (prefers-color-scheme:light){:root{--bg:#f5f5f8;--fg:#17171c;--mut:#6a6a78;--card:#fff;--acc:#d63a5d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,sans-serif;min-height:100dvh;display:flex;justify-content:center}
+main{width:100%;max-width:440px;padding:20px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:18px}
+#cover{width:100%;aspect-ratio:1;border-radius:16px;background:var(--card);object-fit:cover}
+h1{font-size:1.25rem;margin:0;overflow-wrap:anywhere}
+.sub{color:var(--mut);margin-top:4px;overflow-wrap:anywhere}
+.row{display:flex;align-items:center;justify-content:center;gap:14px}
+button{border:0;border-radius:50%;width:56px;height:56px;background:var(--card);color:var(--fg);font-size:1.4rem;cursor:pointer}
+button.big{width:76px;height:76px;background:var(--acc);color:#fff;font-size:1.8rem}
+button.tog{width:auto;height:40px;border-radius:20px;padding:0 16px;font-size:.9rem}
+button.on{outline:2px solid var(--acc)}
+button:active{transform:scale(.96)}
+input[type=range]{width:100%;accent-color:var(--acc);height:32px}
+.times{display:flex;justify-content:space-between;color:var(--mut);font-size:.85rem;font-variant-numeric:tabular-nums}
+#err{color:var(--acc);text-align:center;min-height:1.2em}
+.vol{display:flex;gap:10px;align-items:center}
+</style>
+</head>
+<body>
+<main>
+  <img id="cover" alt="">
+  <div><h1 id="title">-</h1><div class="sub" id="artist"></div><div class="sub" id="album"></div></div>
+  <div><input type="range" id="pos" min="0" max="1" value="0" step="1" aria-label="Position">
+    <div class="times"><span id="t0">0:00</span><span id="t1">0:00</span></div></div>
+  <div class="row">
+    <button id="prev" aria-label="Previous">&#9198;</button>
+    <button id="pp" class="big" aria-label="Play or pause">&#9654;</button>
+    <button id="next" aria-label="Next">&#9197;</button>
+  </div>
+  <div class="vol"><span aria-hidden="true">&#128265;</span><input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume"></div>
+  <div class="row">
+    <button id="shuf" class="tog">Shuffle</button>
+    <button id="loop" class="tog">Repeat: -</button>
+  </div>
+  <div id="err" role="status"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const LOOPS = ["None", "Track", "Playlist"];
+let st = null, seenAt = 0, dragPos = false, dragVol = false, lastArt = "";
+const fmt = us => { const s = Math.max(0, Math.floor(us / 1e6)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+async function cmd(body) {
+  try {
+    const r = await fetch("/api/cmd", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    $("err").textContent = "";
+    refresh();
+  } catch (e) { $("err").textContent = String(e.message || e); }
+}
+
+function render() {
+  if (!st) return;
+  $("title").textContent = st.title || "Nothing playing";
+  $("artist").textContent = st.artist;
+  $("album").textContent = st.album;
+  document.title = st.title ? st.artist + " - " + st.title : "Strawberry remote";
+  $("pp").innerHTML = st.status === "Playing" ? "&#9208;" : "&#9654;";
+  $("shuf").classList.toggle("on", st.shuffle);
+  $("loop").textContent = "Repeat: " + st.loop;
+  $("loop").classList.toggle("on", st.loop !== "None");
+  $("pos").max = st.length || 1;
+  $("pos").disabled = !st.can_seek;
+  if (!dragVol) $("vol").value = Math.round(st.volume * 100);
+  const key = st.trackid + "|" + st.art_url;
+  if (key !== lastArt) { lastArt = key; $("cover").src = "/api/cover?" + Date.now(); }
+  tick();
+}
+
+function tick() {
+  if (!st || dragPos) return;
+  let p = st.position;
+  if (st.status === "Playing") p += (Date.now() - seenAt) * 1000;
+  p = Math.min(p, st.length);
+  $("pos").value = p;
+  $("t0").textContent = fmt(p);
+  $("t1").textContent = fmt(st.length);
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state");
+    if (r.status === 401) { $("err").textContent = "Not authorised: open the link with ?t=... again"; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    st = j; seenAt = Date.now(); $("err").textContent = "";
+    render();
+  } catch (e) { $("err").textContent = String(e.message || e); }
+}
+
+$("pp").onclick = () => cmd({action: "playpause"});
+$("prev").onclick = () => cmd({action: "prev"});
+$("next").onclick = () => cmd({action: "next"});
+$("shuf").onclick = () => cmd({action: "shuffle", value: !(st && st.shuffle)});
+$("loop").onclick = () => cmd({action: "loop", value: LOOPS[(LOOPS.indexOf(st ? st.loop : "None") + 1) % 3]});
+$("pos").addEventListener("input", () => { dragPos = true; $("t0").textContent = fmt(+$("pos").value); });
+$("pos").addEventListener("change", () => { dragPos = false; cmd({action: "seek", value: +$("pos").value}); });
+$("vol").addEventListener("input", () => { dragVol = true; });
+$("vol").addEventListener("change", () => { dragVol = false; cmd({action: "volume", value: +$("vol").value / 100}); });
+
+setInterval(refresh, 2000);
+setInterval(tick, 500);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+refresh();
+</script>
+</body>
+</html>
