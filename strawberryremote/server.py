@@ -3,9 +3,12 @@ import hmac
 import json
 import os
 import secrets
+import signal
 import socket
 import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -120,22 +123,69 @@ def lan_ip():
         s.close()
 
 
+def player_running(name=mpris.BUS):
+    try:
+        subprocess.run(["busctl", "--user", "status", name], capture_output=True, check=True, timeout=5)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def follow(is_up, start, stop, stop_event, interval=3.0):
+    """Keep the server up exactly while the player is on the bus."""
+    srv = None
+    while not stop_event.is_set():
+        up = is_up()
+        if up and srv is None:
+            srv = start()
+        elif not up and srv is not None:
+            stop(srv)
+            srv = None
+        stop_event.wait(interval)
+    if srv is not None:
+        stop(srv)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="strawberryremote", description="Phone remote for Strawberry (MPRIS).")
     p.add_argument("--host", default="0.0.0.0", help="bind address (default %(default)s; use 127.0.0.1 for local only)")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--follow", action="store_true",
+                   help="run as a service: serve only while Strawberry is running (for systemd)")
+    p.add_argument("--watch-name", default=mpris.BUS, help=argparse.SUPPRESS)
     p.add_argument("--new-token", action="store_true", help="invalidate the old link and generate a new token")
     args = p.parse_args(argv)
 
     token = load_token(args.new_token)
     host = lan_ip() if args.host in ("0.0.0.0", "") else args.host
     url = "http://%s:%d/?t=%s" % (host, args.port, token)
-    print("Open on your phone (same network):\n  " + url)
+    print("Open on your phone (same network):\n  " + url, flush=True)
     try:
         qr = subprocess.run(["qrencode", "-t", "ANSIUTF8", url], capture_output=True, text=True)
         if qr.returncode == 0:
             print(qr.stdout)
     except OSError:
         pass
-    print("Plain HTTP: anyone on the network who sees the link can control playback. Ctrl+C to stop.")
-    ThreadingHTTPServer((args.host, args.port), make_handler(token)).serve_forever()
+    print("Plain HTTP: anyone on the network who sees the link can control playback. Ctrl+C to stop.", flush=True)
+    handler = make_handler(token)
+
+    if args.follow:
+        stop_event = threading.Event()
+        signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
+        signal.signal(signal.SIGINT, lambda *_: stop_event.set())
+
+        def start():
+            srv = ThreadingHTTPServer((args.host, args.port), handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            print("strawberry up: serving on port %d" % args.port, flush=True)
+            return srv
+
+        def stop(srv):
+            srv.shutdown()
+            srv.server_close()
+            print("strawberry gone: server stopped", flush=True)
+
+        follow(lambda: player_running(args.watch_name), start, stop, stop_event)
+        return 0
+
+    ThreadingHTTPServer((args.host, args.port), handler).serve_forever()
