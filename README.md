@@ -23,9 +23,24 @@ mode, cover art, track info.
 |---|---|
 | `--host 127.0.0.1` | local only (default `0.0.0.0`, all interfaces) |
 | `--port N` | default 8765 |
+| `--follow` | service mode: open the port only while Strawberry is running |
 | `--new-token` | invalidate the old link and generate a new token |
 
 The token lives in `~/.config/strawberryremote/token` (mode 600).
+
+## Start and stop with Strawberry (systemd)
+
+```
+mkdir -p ~/.config/systemd/user
+cp contrib/strawberryremote.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now strawberryremote
+```
+
+The unit runs `--follow`: a light watcher that opens the HTTP port when
+Strawberry appears on the session bus and closes it when Strawberry exits
+(checked every 3 s). Adjust `PYTHONPATH` in the unit if the clone lives
+elsewhere. The link is the one in `journalctl --user -u strawberryremote`.
 
 ## Security
 
