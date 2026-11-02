@@ -60,3 +60,33 @@ def test_command_whitelist():
         except ValueError:
             continue
         raise AssertionError(bad)
+
+
+def test_follow_starts_and_stops_with_player():
+    import threading
+    states = iter([False, True, True, False, False])
+    events = []
+    ev = threading.Event()
+
+    def is_up():
+        try:
+            return next(states)
+        except StopIteration:
+            ev.set()
+            return False
+
+    server.follow(is_up, lambda: events.append("start") or "srv", lambda s: events.append("stop"), ev, interval=0)
+    assert events == ["start", "stop"]
+
+
+def test_follow_stops_server_on_exit():
+    import threading
+    ev = threading.Event()
+    events = []
+
+    def is_up():
+        ev.set()
+        return True
+
+    server.follow(is_up, lambda: events.append("start") or "srv", lambda s: events.append("stop"), ev, interval=0)
+    assert events == ["start", "stop"]
