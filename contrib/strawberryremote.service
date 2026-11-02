@@ -1,0 +1,13 @@
+[Unit]
+Description=Strawberry phone remote (serves only while Strawberry runs)
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=%h/Projects/strawberryremote
+ExecStart=/usr/bin/python3 -u -m strawberryremote --follow
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
