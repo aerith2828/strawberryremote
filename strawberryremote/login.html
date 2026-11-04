@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0f">
+<title>Strawberry remote</title>
+<style>
+:root{--bg:#0b0b0f;--fg:#ececf1;--mut:#8b8b98;--card:#16161d;--acc:#e5486b}
+@media (prefers-color-scheme:light){:root{--bg:#f5f5f8;--fg:#17171c;--mut:#6a6a78;--card:#fff;--acc:#d63a5d}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,sans-serif;min-height:100dvh;display:flex;align-items:center;justify-content:center}
+main{width:100%;max-width:320px;padding:16px;text-align:center}
+input{width:100%;box-sizing:border-box;font-size:2rem;letter-spacing:.6em;text-align:center;padding:12px;border-radius:12px;border:2px solid var(--card);background:var(--card);color:var(--fg)}
+input:focus{outline:none;border-color:var(--acc)}
+#msg{min-height:1.4em;margin-top:14px;color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Strawberry</h1>
+  <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autofocus aria-label="PIN">
+  <div id="msg" role="status"></div>
+</main>
+<script>
+const pin = document.getElementById("pin"), msg = document.getElementById("msg");
+pin.addEventListener("input", async () => {
+  pin.value = pin.value.replace(/\D/g, "");
+  if (pin.value.length < 4) return;
+  try {
+    const r = await fetch("/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({pin: pin.value})});
+    if (r.ok) { location.reload(); return; }
+    msg.textContent = r.status === 429 ? "Too many attempts, wait a bit" : "Wrong PIN";
+  } catch (e) { msg.textContent = "Connection error"; }
+  pin.value = "";
+});
+</script>
+</body>
+</html>
