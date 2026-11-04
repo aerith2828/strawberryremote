@@ -19,4 +19,4 @@ packages = ["strawberryremote"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-strawberryremote = ["index.html"]
+strawberryremote = ["index.html", "login.html"]
