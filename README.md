@@ -28,6 +28,20 @@ mode, cover art, track info.
 
 The token lives in `~/.config/strawberryremote/token` (mode 600).
 
+## PIN login
+
+Instead of typing the token link, set a PIN once and open
+`http://HOSTNAME.local:8765` on the phone (mDNS, needs avahi on the PC):
+
+```
+python3 -m strawberryremote --set-pin 1234     # 4-8 digits, stored in ~/.config/strawberryremote/pin (mode 600)
+```
+
+The login page sets the same cookie as the token link (valid one year). After
+5 wrong PINs an IP is locked out for 5 minutes. A short PIN is weak against
+anyone who can reach the port for long enough, so keep the firewall limited
+to your LAN. The `?t=TOKEN` link keeps working.
+
 ## Start and stop with Strawberry (systemd)
 
 ```
