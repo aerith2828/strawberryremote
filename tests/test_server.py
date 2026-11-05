@@ -90,3 +90,35 @@ def test_follow_stops_server_on_exit():
 
     server.follow(is_up, lambda: events.append("start") or "srv", lambda s: events.append("stop"), ev, interval=0)
     assert events == ["start", "stop"]
+
+
+def post_json(url, obj):
+    return req(url, json.dumps(obj).encode())
+
+
+def test_pin_login_and_lockout():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler("secret", "1234", server.Throttle()))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    assert b"pin" in req(base + "/").read()  # login page, not the player
+    assert req(base + "/api/state").code == 401
+    for _ in range(5):
+        assert post_json(base + "/login", {"pin": "0000"}).code == 403
+    assert post_json(base + "/login", {"pin": "1234"}).code == 429  # locked out even with the right pin
+    srv.shutdown()
+
+
+def test_pin_login_sets_cookie():
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler("secret", "1234", server.Throttle()))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    r = post_json(base + "/login", {"pin": "1234"})
+    assert r.code == 200 and "sr_token=secret" in r.headers["Set-Cookie"]
+    assert "HttpOnly" in r.headers["Set-Cookie"]
+    srv.shutdown()
+
+
+def test_no_pin_means_no_login():
+    srv, base = start()
+    assert post_json(base + "/login", {"pin": "1234"}).code == 404
+    srv.shutdown()
